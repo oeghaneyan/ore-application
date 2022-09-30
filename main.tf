@@ -100,9 +100,8 @@ module "elb_http" {
 }
 
 resource "aws_instance" "ore-application" {
-  count = var.instance_count
-
-  ami           = data.hcp_packer_image.ubuntu.cloud_image_id
+  count = var.instances_per_subnet
+  ami           = data.hcp_packer_image.aws-ubuntu.cloud_image_id
   instance_type = var.instance_type
 
   subnet_id              = var.subnet_ids[count.index % length(var.subnet_ids)]
