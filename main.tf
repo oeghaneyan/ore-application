@@ -74,8 +74,8 @@ module "elb_http" {
   security_groups = [module.lb_security_group.security_group_id]
   subnets         = module.vpc.public_subnets
 
-  number_of_instances = length(aws_instance.app)
-  instances           = aws_instance.app.*.id
+  number_of_instances = length(aws_instance.ore-application)
+  instances           = aws_instance.ore-application.*.id
 
   listener = [{
     instance_port     = "80"
