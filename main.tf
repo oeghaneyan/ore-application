@@ -20,43 +20,39 @@ data "hcp_packer_image" "aws-ubuntu" {
 
 module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
-  version = "2.66.0"
-
-  for_each = var.project
+  version = "3.14.2"
 
   cidr = var.vpc_cidr_block
 
   azs             = data.aws_availability_zones.available.names
-  private_subnets = slice(var.private_subnet_cidr_blocks, 0, each.value.private_subnet_count)
-  public_subnets  = slice(var.public_subnet_cidr_blocks, 0, each.value.public_subnet_count)
+  private_subnets = slice(var.private_subnet_cidr_blocks, 0, var.private_subnets_per_vpc)
+  public_subnets  = slice(var.public_subnet_cidr_blocks, 0, var.public_subnets_per_vpc)
 
   enable_nat_gateway = true
   enable_vpn_gateway = false
+
+  map_public_ip_on_launch = false
 }
 
 module "app_security_group" {
   source  = "terraform-aws-modules/security-group/aws//modules/web"
-  version = "3.17.0"
+  version = "4.9.0"
 
-  for_each = var.project
-
-  name        = "web-server-sg-${each.key}-${each.value.environment}"
+  name        = "web-server-sg-${var.project_name}-${var.environment}"
   description = "Security group for web-servers with HTTP ports open within VPC"
-  vpc_id      = module.vpc[each.key].vpc_id
+  vpc_id      = module.vpc.vpc_id
 
-  ingress_cidr_blocks = module.vpc[each.key].public_subnets_cidr_blocks
+  ingress_cidr_blocks = module.vpc.public_subnets_cidr_blocks
 }
 
 module "lb_security_group" {
   source  = "terraform-aws-modules/security-group/aws//modules/web"
-  version = "3.17.0"
+  version = "4.9.0"
 
-  for_each = var.project
-
-  name = "load-balancer-sg-${each.key}-${each.value.environment}"
+  name = "load-balancer-sg-${var.project_name}-${var.environment}"
 
   description = "Security group for load balancer with HTTP ports open within VPC"
-  vpc_id      = module.vpc[each.key].vpc_id
+  vpc_id      = module.vpc.vpc_id
 
   ingress_cidr_blocks = ["0.0.0.0/0"]
 }
@@ -68,20 +64,18 @@ resource "random_string" "lb_id" {
 
 module "elb_http" {
   source  = "terraform-aws-modules/elb/aws"
-  version = "2.4.0"
+  version = "3.0.1"
 
-  for_each = var.project
-
-  # Comply with ELB name restrictions 
+  # Comply with ELB name restrictions
   # https://docs.aws.amazon.com/elasticloadbalancing/2012-06-01/APIReference/API_CreateLoadBalancer.html
-  name     = trimsuffix(substr(replace(join("-", ["lb", random_string.lb_id.result, each.key, each.value.environment]), "/[^a-zA-Z0-9-]/", ""), 0, 32), "-")
+  name     = trimsuffix(substr(replace(join("-", ["lb", random_string.lb_id.result, var.project_name, var.environment]), "/[^a-zA-Z0-9-]/", ""), 0, 32), "-")
   internal = false
 
-  security_groups = [module.lb_security_group[each.key].this_security_group_id]
-  subnets         = module.vpc[each.key].public_subnets
+  security_groups = [module.lb_security_group.security_group_id]
+  subnets         = module.vpc.public_subnets
 
-  number_of_instances = length(aws_instance.ore-application)
-  instances           = aws_instance.ore-application.*.id
+  number_of_instances = length(aws_instance.app)
+  instances           = aws_instance.app.*.id
 
   listener = [{
     instance_port     = "80"
@@ -100,12 +94,12 @@ module "elb_http" {
 }
 
 resource "aws_instance" "ore-application" {
-  count = var.instances_per_subnet
+  count = 2
   ami           = data.hcp_packer_image.aws-ubuntu.cloud_image_id
   instance_type = var.instance_type
 
-  subnet_id              = var.subnet_ids[count.index % length(var.subnet_ids)]
-  vpc_security_group_ids = var.security_group_ids
+  subnet_id              = module.vpc.private_subnets[0]
+  vpc_security_group_ids = [module.app_security_group.security_group_id]
 
   user_data = <<-EOF
     #!/bin/bash
