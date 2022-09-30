@@ -7,12 +7,12 @@ data "aws_availability_zones" "available" {
 }
 
 data "hcp_packer_iteration" "aws-ubuntu" {
-  bucket_name = ore-ubuntu-image
-  channel     = Production
+  bucket_name = "ore-ubuntu-image"
+  channel     = "Production"
 }
 
 data "hcp_packer_image" "aws-ubuntu" {
-  bucket_name    = ore-ubuntu-image
+  bucket_name    = "ore-ubuntu-image"
   cloud_provider = "aws"
   iteration_id   = data.hcp_packer_iteration.aws-ubuntu.ulid
   region         = "us-east-1"
@@ -80,8 +80,8 @@ module "elb_http" {
   security_groups = [module.lb_security_group[each.key].this_security_group_id]
   subnets         = module.vpc[each.key].public_subnets
 
-  number_of_instances = length(module.standard-instance[each.key].instance_ids)
-  instances           = module.standard-instance[each.key].instance_ids
+  number_of_instances = length(aws_instance.ore-application)
+  instances           = aws_instance.ore-application.*.id
 
   listener = [{
     instance_port     = "80"
